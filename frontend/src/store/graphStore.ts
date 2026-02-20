@@ -11,7 +11,7 @@ import {
   type OnConnect,
   type Connection,
 } from '@xyflow/react'
-import type { DeviceNodeData, DeviceType, PortData, GraphPayload } from '../types/graph'
+import type { DeviceNodeData, DeviceType, PortData, InternalConnection, GraphPayload } from '../types/graph'
 
 const LS_KEY = 'graph_v2'
 
@@ -33,7 +33,7 @@ function payloadToFlow(payload: GraphPayload) {
     id: d.name,
     type: 'device',
     position: { x: d.pos_x, y: d.pos_y },
-    data: { ...d, deviceTypes: payload.deviceTypes },
+    data: { ...d, id: d.id ?? null, internal_connections: d.internal_connections ?? [], deviceTypes: payload.deviceTypes },
   }))
 
   const edges: Edge[] = payload.connections.map((c) => ({
@@ -55,11 +55,13 @@ function flowToPayload(
 ): GraphPayload {
   const devices = nodes.map((n) => ({
     name: n.id,
+    id: n.data.id ?? null,
     type: n.data.type,
     description: n.data.description,
     pos_x: Math.round(n.position.x),
     pos_y: Math.round(n.position.y),
     ports: n.data.ports,
+    internal_connections: n.data.internal_connections ?? [],
   }))
 
   const connections = edges.map((e) => ({
@@ -107,6 +109,10 @@ interface GraphState {
   addPort: (nodeId: string, direction: 'in' | 'out') => void
   renamePort: (nodeId: string, oldPortName: string, newPortName: string) => string | null
   deletePort: (nodeId: string, portName: string) => void
+
+  // Internal connections (within a single device)
+  addInternalConnection: (nodeId: string, inPort: string, outPort: string) => string | null
+  deleteInternalConnection: (nodeId: string, inPort: string, outPort: string) => void
 
   selectNode: (nodeId: string | null) => void
 }
@@ -297,11 +303,13 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       position: { x: 120 + nodes.length * 30, y: 120 + nodes.length * 30 },
       data: {
         name,
+        id: null,
         type: typeName,
         description: null,
         pos_x: 120,
         pos_y: 120,
         ports: [],
+        internal_connections: [],
         deviceTypes,
       },
     }
@@ -401,6 +409,10 @@ export const useGraphStore = create<GraphState>((set, get) => ({
                 ports: n.data.ports.map((p) =>
                   p.name === oldPortName ? { ...p, name: trimmed } : p,
                 ),
+                internal_connections: n.data.internal_connections.map((ic) => ({
+                  in_port: ic.in_port === oldPortName ? trimmed : ic.in_port,
+                  out_port: ic.out_port === oldPortName ? trimmed : ic.out_port,
+                })),
               },
             },
       ),
@@ -429,12 +441,60 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       nodes: s.nodes.map((n) =>
         n.id !== nodeId
           ? n
-          : { ...n, data: { ...n.data, ports: n.data.ports.filter((p) => p.name !== portName) } },
+          : {
+              ...n,
+              data: {
+                ...n.data,
+                ports: n.data.ports.filter((p) => p.name !== portName),
+                internal_connections: n.data.internal_connections.filter(
+                  (ic) => ic.in_port !== portName && ic.out_port !== portName,
+                ),
+              },
+            },
       ),
       edges: s.edges.filter(
         (e) =>
           !(e.source === nodeId && e.sourceHandle === handle) &&
           !(e.target === nodeId && e.targetHandle === handle),
+      ),
+    }))
+    get().autoSave()
+  },
+
+  // ── Internal connections ───────────────────────────────────────────────────
+
+  addInternalConnection: (nodeId, inPort, outPort) => {
+    const node = get().nodes.find((n) => n.id === nodeId)
+    if (!node) return null
+    const ics = node.data.internal_connections ?? []
+    if (ics.some((ic: InternalConnection) => ic.in_port === inPort && ic.out_port === outPort)) {
+      return "Такий зв'язок вже існує"
+    }
+    set((s) => ({
+      nodes: s.nodes.map((n) =>
+        n.id !== nodeId
+          ? n
+          : { ...n, data: { ...n.data, internal_connections: [...ics, { in_port: inPort, out_port: outPort }] } },
+      ),
+    }))
+    get().autoSave()
+    return null
+  },
+
+  deleteInternalConnection: (nodeId, inPort, outPort) => {
+    set((s) => ({
+      nodes: s.nodes.map((n) =>
+        n.id !== nodeId
+          ? n
+          : {
+              ...n,
+              data: {
+                ...n.data,
+                internal_connections: (n.data.internal_connections ?? []).filter(
+                  (ic: InternalConnection) => !(ic.in_port === inPort && ic.out_port === outPort),
+                ),
+              },
+            },
       ),
     }))
     get().autoSave()

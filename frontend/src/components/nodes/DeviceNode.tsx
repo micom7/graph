@@ -50,17 +50,20 @@ function DeviceNode({ id, data, selected }: NodeProps<Node<DeviceNodeData>>) {
         <span>{label}</span>
       </div>
 
-      {/* Device name */}
+      {/* Device name + id */}
       <div
         style={{
           padding: '4px 10px 2px',
-          fontWeight: 600,
           borderBottom: '1px solid #333',
-          fontSize: 12,
-          color: '#ccc',
+          display: 'flex',
+          alignItems: 'baseline',
+          gap: 6,
         }}
       >
-        {data.name}
+        <span style={{ fontWeight: 600, fontSize: 12, color: '#ccc' }}>{data.name}</span>
+        {data.id && (
+          <span style={{ fontSize: 10, color: '#888', fontStyle: 'italic' }}>{data.id}</span>
+        )}
       </div>
 
       {/* Ports layout */}

@@ -11,6 +11,8 @@ export default function NodeEditor() {
   const deletePort = useGraphStore((s) => s.deletePort)
   const deleteNode = useGraphStore((s) => s.deleteNode)
   const selectNode = useGraphStore((s) => s.selectNode)
+  const addInternalConnection = useGraphStore((s) => s.addInternalConnection)
+  const deleteInternalConnection = useGraphStore((s) => s.deleteInternalConnection)
 
   const [nameDraft, setNameDraft] = useState('')
   const [nameError, setNameError] = useState<string | null>(null)
@@ -19,6 +21,11 @@ export default function NodeEditor() {
   const [editingPortName, setEditingPortName] = useState<string | null>(null)
   const [portNameDraft, setPortNameDraft] = useState('')
   const [portNameError, setPortNameError] = useState<string | null>(null)
+
+  // Internal connection add form
+  const [newInPort, setNewInPort] = useState('')
+  const [newOutPort, setNewOutPort] = useState('')
+  const [intConnError, setIntConnError] = useState<string | null>(null)
 
   // Reset name draft when switching nodes
   useEffect(() => {
@@ -29,6 +36,9 @@ export default function NodeEditor() {
     setNameError(null)
     setEditingPortName(null)
     setPortNameError(null)
+    setNewInPort('')
+    setNewOutPort('')
+    setIntConnError(null)
   }, [selectedNodeId])
 
   if (!selectedNodeId) return null
@@ -39,6 +49,11 @@ export default function NodeEditor() {
   const { data } = node
   const inPorts = data.ports.filter((p) => p.direction === 'in')
   const outPorts = data.ports.filter((p) => p.direction === 'out')
+  const internalConns = data.internal_connections ?? []
+
+  // Auto-fallback: if current selection is gone (port deleted), use first available
+  const selIn  = inPorts.find((p) => p.name === newInPort)  ? newInPort  : (inPorts[0]?.name  ?? '')
+  const selOut = outPorts.find((p) => p.name === newOutPort) ? newOutPort : (outPorts[0]?.name ?? '')
 
   const commitDeviceName = () => {
     const err = renameDevice(selectedNodeId, nameDraft)
@@ -136,6 +151,14 @@ export default function NodeEditor() {
       />
       {nameError && <div style={styles.fieldError}>{nameError}</div>}
 
+      {/* Device id */}
+      <label style={styles.label}>Id</label>
+      <input
+        style={styles.input}
+        value={data.id ?? ''}
+        onChange={(e) => updateNodeData(selectedNodeId, { id: e.target.value || null })}
+      />
+
       {/* Description */}
       <label style={styles.label}>Опис</label>
       <textarea
@@ -163,6 +186,55 @@ export default function NodeEditor() {
       >
         + Додати вихід
       </button>
+
+      {/* Internal connections */}
+      <div style={styles.portsTitle}>Внутрішні зв'язки</div>
+      {inPorts.length === 0 || outPorts.length === 0 ? (
+        <div style={{ color: '#555', fontSize: 11 }}>Додайте входи та виходи для з'єднання</div>
+      ) : (
+        <>
+          {internalConns.map((ic) => (
+            <div key={`${ic.in_port}->${ic.out_port}`} style={styles.portRow}>
+              <span style={{ color: '#7ec8e3', flex: 1 }}>{ic.in_port}</span>
+              <span style={{ color: '#aaa' }}>→</span>
+              <span style={{ color: '#90ee90', flex: 1, textAlign: 'right' }}>{ic.out_port}</span>
+              <button
+                style={{ ...styles.iconBtn, color: '#f66' }}
+                onClick={() => deleteInternalConnection(selectedNodeId, ic.in_port, ic.out_port)}
+                title="Видалити зв'язок"
+              >🗑</button>
+            </div>
+          ))}
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginTop: 4 }}>
+            <select
+              style={styles.select}
+              value={selIn}
+              onChange={(e) => { setNewInPort(e.target.value); setIntConnError(null) }}
+            >
+              {inPorts.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
+            </select>
+            <span style={{ color: '#aaa' }}>→</span>
+            <select
+              style={styles.select}
+              value={selOut}
+              onChange={(e) => { setNewOutPort(e.target.value); setIntConnError(null) }}
+            >
+              {outPorts.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
+            </select>
+            <button
+              style={styles.addInternalBtn}
+              onClick={() => {
+                if (!selIn || !selOut) return
+                const err = addInternalConnection(selectedNodeId, selIn, selOut)
+                if (err) setIntConnError(err)
+                else setIntConnError(null)
+              }}
+              title="Додати зв'язок"
+            >+</button>
+          </div>
+          {intConnError && <div style={styles.fieldError}>{intConnError}</div>}
+        </>
+      )}
 
       {/* Delete node */}
       <button
@@ -278,5 +350,26 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '4px 8px',
     fontSize: 12,
     textAlign: 'left',
+  },
+  select: {
+    background: '#0f3460',
+    border: '1px solid #444',
+    borderRadius: 4,
+    color: '#eee',
+    padding: '4px 6px',
+    fontSize: 12,
+    flex: 1,
+    minWidth: 0,
+  },
+  addInternalBtn: {
+    background: '#0f3460',
+    border: '1px solid #555',
+    borderRadius: 4,
+    color: '#eee',
+    cursor: 'pointer',
+    padding: '4px 8px',
+    fontSize: 14,
+    fontWeight: 700,
+    flexShrink: 0,
   },
 }
