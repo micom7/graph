@@ -133,9 +133,6 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   },
 
   onConnect: (connection: Connection) => {
-    // Debug: показати що onConnect викликався
-    set({ status: `onConnect: ${connection.source} → ${connection.target} | src=${connection.sourceHandle} tgt=${connection.targetHandle}` })
-
     if (!connection.source || !connection.target) return
     if (connection.source === connection.target) return
 
@@ -160,7 +157,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       ...EDGE_DEFAULTS,
     }
     set((s) => ({ edges: addEdge(newEdge, s.edges) }))
-    get().autoSave()
+    setTimeout(() => get().autoSave(), 0)
   },
 
   // ── File operations ────────────────────────────────────────────────────────
