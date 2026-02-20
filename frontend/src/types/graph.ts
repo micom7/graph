@@ -40,5 +40,6 @@ export interface GraphPayload {
 // ── React Flow node data ───────────────────────────────────────────────────────
 
 export interface DeviceNodeData extends DeviceData {
+  [key: string]: unknown
   deviceTypes: DeviceType[]
 }

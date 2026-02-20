@@ -12,7 +12,6 @@ import {
   type Connection,
 } from '@xyflow/react'
 import type { DeviceNodeData, DeviceType, PortData, GraphPayload, ConnectionData } from '../types/graph'
-import { api } from '../api/client'
 
 const LS_KEY = 'graph_autosave'
 let _nextTmpId = -1
@@ -23,18 +22,26 @@ const EDGE_DEFAULTS = {
   markerEnd: { type: MarkerType.ArrowClosed, color: '#64b5f6' },
 }
 
+const DEVICE_TYPES: DeviceType[] = [
+  { id: 1, name: 'zasuvka',     label: 'Засувка',      color: '#4A90D9', icon: 'zasuvka' },
+  { id: 2, name: 'noria',       label: 'Норія',        color: '#E67E22', icon: 'noria' },
+  { id: 3, name: 'transporter', label: 'Транспортер',  color: '#27AE60', icon: 'transporter' },
+  { id: 4, name: 'redler',      label: 'Редлер',       color: '#8E44AD', icon: 'redler' },
+  { id: 5, name: 'bunker',      label: 'Бункер',       color: '#C0392B', icon: 'bunker' },
+  { id: 6, name: 'sylos',       label: 'Силос',        color: '#16A085', icon: 'sylos' },
+]
+
 // Convert GraphPayload ↔ React Flow nodes/edges ─────────────────────────────
 
-function payloadToFlow(payload: GraphPayload, deviceTypes: DeviceType[]) {
+function payloadToFlow(payload: GraphPayload) {
   const nodes: Node<DeviceNodeData>[] = payload.devices.map((d) => ({
     id: String(d.id),
     type: 'device',
     position: { x: d.pos_x, y: d.pos_y },
-    data: { ...d, deviceTypes },
+    data: { ...d, deviceTypes: DEVICE_TYPES },
   }))
 
   const edges: Edge[] = payload.connections.map((c) => {
-    // Find which node owns source_port and target_port
     const srcDevice = payload.devices.find((d) =>
       d.ports.some((p) => p.id === c.source_port),
     )
@@ -97,9 +104,8 @@ interface GraphState {
   onConnect: OnConnect
 
   // Actions
-  loadFromDB: () => Promise<void>
-  saveToDB: () => Promise<void>
-  exportJSON: () => void
+  saveToFile: () => void
+  loadFromFile: (file: File) => void
   addDevice: (typeId: number) => void
   updateNodeData: (nodeId: string, data: Partial<DeviceNodeData>) => void
   deleteNode: (nodeId: string) => void
@@ -114,7 +120,7 @@ interface GraphState {
 export const useGraphStore = create<GraphState>((set, get) => ({
   nodes: [],
   edges: [],
-  deviceTypes: [],
+  deviceTypes: DEVICE_TYPES,
   selectedNodeId: null,
   status: '',
 
@@ -131,14 +137,8 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   },
 
   onConnect: (connection: Connection) => {
-    // Prevent self-loops
     if (connection.source === connection.target) return
 
-    // Prevent connecting output→output or input→input
-    // sourceHandle is always an output port, targetHandle is always an input port
-    // (enforced by DeviceNode handle types)
-
-    // Prevent duplicate edges
     const { edges } = get()
     const duplicate = edges.some(
       (e) =>
@@ -159,38 +159,9 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     get().autoSave()
   },
 
-  // ── DB operations ──────────────────────────────────────────────────────────
+  // ── File operations ────────────────────────────────────────────────────────
 
-  loadFromDB: async () => {
-    set({ status: 'Завантаження…' })
-    try {
-      const [payload, types] = await Promise.all([
-        api.getGraph(),
-        api.getDeviceTypes(),
-      ])
-      const { nodes, edges } = payloadToFlow(payload, types)
-      set({ nodes, edges, deviceTypes: types, status: 'Завантажено з БД' })
-      get().autoSave()
-    } catch (e) {
-      set({ status: `Помилка завантаження: ${(e as Error).message}` })
-    }
-  },
-
-  saveToDB: async () => {
-    set({ status: 'Збереження…' })
-    try {
-      const { nodes, edges } = get()
-      const payload = flowToPayload(nodes, edges)
-      const saved = await api.saveGraph(payload)
-      const { nodes: newNodes, edges: newEdges } = payloadToFlow(saved, get().deviceTypes)
-      set({ nodes: newNodes, edges: newEdges, status: 'Збережено в БД' })
-      get().autoSave()
-    } catch (e) {
-      set({ status: `Помилка збереження: ${(e as Error).message}` })
-    }
-  },
-
-  exportJSON: () => {
+  saveToFile: () => {
     const { nodes, edges } = get()
     const payload = flowToPayload(nodes, edges)
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
@@ -200,13 +171,29 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     a.download = 'graph.json'
     a.click()
     URL.revokeObjectURL(url)
+    set({ status: 'Файл збережено' })
+  },
+
+  loadFromFile: (file: File) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      try {
+        const payload = JSON.parse(e.target?.result as string) as GraphPayload
+        const { nodes, edges } = payloadToFlow(payload)
+        set({ nodes, edges, status: `Завантажено: ${file.name}` })
+        get().autoSave()
+      } catch {
+        set({ status: 'Помилка читання файлу' })
+      }
+    }
+    reader.readAsText(file)
   },
 
   // ── Node / port mutations ──────────────────────────────────────────────────
 
   addDevice: (typeId: number) => {
-    const { deviceTypes, nodes } = get()
-    const dt = deviceTypes.find((t) => t.id === typeId)
+    const { nodes } = get()
+    const dt = DEVICE_TYPES.find((t) => t.id === typeId)
     const id = String(tmpId())
     const newNode: Node<DeviceNodeData> = {
       id,
@@ -221,7 +208,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
         pos_x: 100,
         pos_y: 100,
         ports: [],
-        deviceTypes,
+        deviceTypes: DEVICE_TYPES,
       },
     }
     set((s) => ({ nodes: [...s.nodes, newNode] }))
@@ -296,7 +283,6 @@ export const useGraphStore = create<GraphState>((set, get) => ({
             }
           : n,
       ),
-      // Also remove edges connected to this port
       edges: s.edges.filter(
         (e) =>
           e.sourceHandle !== `port-${portId}` &&
@@ -327,7 +313,10 @@ export const useGraphStore = create<GraphState>((set, get) => ({
         nodes: Node<DeviceNodeData>[]
         edges: Edge[]
       }
-      const nodes = parsed.nodes
+      const nodes = parsed.nodes.map((n) => ({
+        ...n,
+        data: { ...n.data, deviceTypes: DEVICE_TYPES },
+      }))
       const edges = parsed.edges.map((e) => ({ ...e, ...EDGE_DEFAULTS }))
       set({ nodes, edges, status: 'Відновлено з локального сховища' })
     } catch {

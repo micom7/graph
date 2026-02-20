@@ -1,21 +1,33 @@
+import { useRef } from 'react'
 import { useGraphStore } from '../../store/graphStore'
 
 export default function SavePanel() {
-  const loadFromDB = useGraphStore((s) => s.loadFromDB)
-  const saveToDB = useGraphStore((s) => s.saveToDB)
-  const exportJSON = useGraphStore((s) => s.exportJSON)
+  const saveToFile = useGraphStore((s) => s.saveToFile)
+  const loadFromFile = useGraphStore((s) => s.loadFromFile)
   const status = useGraphStore((s) => s.status)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   return (
     <div style={styles.panel}>
-      <button style={{ ...styles.btn, background: '#0a6640' }} onClick={saveToDB}>
-        💾 Зберегти в БД
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".json"
+        style={{ display: 'none' }}
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          if (file) loadFromFile(file)
+          e.target.value = ''
+        }}
+      />
+      <button
+        style={{ ...styles.btn, background: '#0f3460' }}
+        onClick={() => fileInputRef.current?.click()}
+      >
+        📂 Відкрити файл
       </button>
-      <button style={{ ...styles.btn, background: '#0f3460' }} onClick={loadFromDB}>
-        ☁️ Завантажити з БД
-      </button>
-      <button style={{ ...styles.btn, background: '#3a3a5c' }} onClick={exportJSON}>
-        📄 Експорт JSON
+      <button style={{ ...styles.btn, background: '#0a6640' }} onClick={saveToFile}>
+        💾 Зберегти файл
       </button>
       {status && <div style={styles.status}>{status}</div>}
     </div>
@@ -52,7 +64,7 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#aaa',
     fontSize: 12,
     marginLeft: 8,
-    maxWidth: 200,
+    maxWidth: 220,
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',

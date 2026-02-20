@@ -1,5 +1,5 @@
 import { memo, useCallback } from 'react'
-import { Handle, Position, type NodeProps } from '@xyflow/react'
+import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
 import type { DeviceNodeData } from '../../types/graph'
 import { useGraphStore } from '../../store/graphStore'
 
@@ -13,7 +13,7 @@ const ICONS: Record<string, string> = {
   sylos: '🏛️',
 }
 
-function DeviceNode({ id, data, selected }: NodeProps<DeviceNodeData>) {
+function DeviceNode({ id, data, selected }: NodeProps<Node<DeviceNodeData>>) {
   const selectNode = useGraphStore((s) => s.selectNode)
 
   const handleDoubleClick = useCallback(() => {
