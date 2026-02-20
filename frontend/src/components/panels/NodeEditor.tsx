@@ -1,18 +1,35 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useGraphStore } from '../../store/graphStore'
 
 export default function NodeEditor() {
   const selectedNodeId = useGraphStore((s) => s.selectedNodeId)
   const nodes = useGraphStore((s) => s.nodes)
+  const renameDevice = useGraphStore((s) => s.renameDevice)
   const updateNodeData = useGraphStore((s) => s.updateNodeData)
   const addPort = useGraphStore((s) => s.addPort)
-  const updatePort = useGraphStore((s) => s.updatePort)
+  const renamePort = useGraphStore((s) => s.renamePort)
   const deletePort = useGraphStore((s) => s.deletePort)
   const deleteNode = useGraphStore((s) => s.deleteNode)
   const selectNode = useGraphStore((s) => s.selectNode)
 
-  const [editingPortId, setEditingPortId] = useState<number | null>(null)
+  const [nameDraft, setNameDraft] = useState('')
+  const [nameError, setNameError] = useState<string | null>(null)
+
+  // portName of the port being edited, null if none
+  const [editingPortName, setEditingPortName] = useState<string | null>(null)
   const [portNameDraft, setPortNameDraft] = useState('')
+  const [portNameError, setPortNameError] = useState<string | null>(null)
+
+  // Reset name draft when switching nodes
+  useEffect(() => {
+    if (selectedNodeId) {
+      const node = useGraphStore.getState().nodes.find((n) => n.id === selectedNodeId)
+      setNameDraft(node?.data.name ?? selectedNodeId)
+    }
+    setNameError(null)
+    setEditingPortName(null)
+    setPortNameError(null)
+  }, [selectedNodeId])
 
   if (!selectedNodeId) return null
 
@@ -23,17 +40,76 @@ export default function NodeEditor() {
   const inPorts = data.ports.filter((p) => p.direction === 'in')
   const outPorts = data.ports.filter((p) => p.direction === 'out')
 
-  const startEditPort = (portId: number, name: string) => {
-    setEditingPortId(portId)
-    setPortNameDraft(name)
+  const commitDeviceName = () => {
+    const err = renameDevice(selectedNodeId, nameDraft)
+    if (err) setNameError(err)
+    else setNameError(null)
   }
 
-  const commitPortName = (portId: number) => {
-    if (portNameDraft.trim()) {
-      updatePort(selectedNodeId, portId, portNameDraft.trim())
-    }
-    setEditingPortId(null)
+  const startEditPort = (portName: string) => {
+    setEditingPortName(portName)
+    setPortNameDraft(portName)
+    setPortNameError(null)
   }
+
+  const commitPortName = () => {
+    if (!editingPortName) return
+    const trimmed = portNameDraft.trim()
+    if (!trimmed) {
+      setPortNameError('Назва не може бути порожньою')
+      return
+    }
+    const err = renamePort(selectedNodeId, editingPortName, trimmed)
+    if (err) {
+      setPortNameError(err)
+    } else {
+      setEditingPortName(null)
+      setPortNameError(null)
+    }
+  }
+
+  const renderPort = (portName: string, color: string) => (
+    <div key={portName} style={styles.portRow}>
+      {editingPortName === portName ? (
+        <>
+          <input
+            autoFocus
+            style={{ ...styles.input, flex: 1, margin: 0 }}
+            value={portNameDraft}
+            onChange={(e) => { setPortNameDraft(e.target.value); setPortNameError(null) }}
+            onBlur={commitPortName}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commitPortName()
+              if (e.key === 'Escape') { setEditingPortName(null); setPortNameError(null) }
+            }}
+          />
+          {portNameError && <span style={styles.portError}>{portNameError}</span>}
+        </>
+      ) : (
+        <span
+          style={{ ...styles.portName, color }}
+          onDoubleClick={() => startEditPort(portName)}
+          title="Подвійний клік для перейменування"
+        >
+          {portName}
+        </span>
+      )}
+      <button
+        style={styles.iconBtn}
+        onClick={() => startEditPort(portName)}
+        title="Перейменувати"
+      >
+        ✏️
+      </button>
+      <button
+        style={{ ...styles.iconBtn, color: '#f66' }}
+        onClick={() => deletePort(selectedNodeId, portName)}
+        title="Видалити порт"
+      >
+        🗑
+      </button>
+    </div>
+  )
 
   return (
     <div style={styles.panel}>
@@ -46,10 +122,19 @@ export default function NodeEditor() {
       {/* Device name */}
       <label style={styles.label}>Назва пристрою</label>
       <input
-        style={styles.input}
-        value={data.name}
-        onChange={(e) => updateNodeData(selectedNodeId, { name: e.target.value })}
+        style={{ ...styles.input, borderColor: nameError ? '#f66' : '#444' }}
+        value={nameDraft}
+        onChange={(e) => { setNameDraft(e.target.value); setNameError(null) }}
+        onBlur={commitDeviceName}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commitDeviceName()
+          if (e.key === 'Escape') {
+            setNameDraft(data.name)
+            setNameError(null)
+          }
+        }}
       />
+      {nameError && <div style={styles.fieldError}>{nameError}</div>}
 
       {/* Description */}
       <label style={styles.label}>Опис</label>
@@ -64,91 +149,18 @@ export default function NodeEditor() {
 
       {/* Input ports */}
       <div style={styles.portGroupLabel}>Входи (input)</div>
-      {inPorts.map((p) => (
-        <div key={p.id} style={styles.portRow}>
-          {editingPortId === p.id ? (
-            <input
-              autoFocus
-              style={{ ...styles.input, flex: 1, margin: 0 }}
-              value={portNameDraft}
-              onChange={(e) => setPortNameDraft(e.target.value)}
-              onBlur={() => commitPortName(p.id)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') commitPortName(p.id)
-                if (e.key === 'Escape') setEditingPortId(null)
-              }}
-            />
-          ) : (
-            <span
-              style={styles.portName}
-              onDoubleClick={() => startEditPort(p.id, p.name)}
-              title="Подвійний клік для перейменування"
-            >
-              {p.name}
-            </span>
-          )}
-          <button
-            style={styles.iconBtn}
-            onClick={() => startEditPort(p.id, p.name)}
-            title="Перейменувати"
-          >
-            ✏️
-          </button>
-          <button
-            style={{ ...styles.iconBtn, color: '#f66' }}
-            onClick={() => deletePort(selectedNodeId, p.id)}
-            title="Видалити порт"
-          >
-            🗑
-          </button>
-        </div>
-      ))}
+      {inPorts.map((p) => renderPort(p.name, '#7ec8e3'))}
       <button style={styles.addPortBtn} onClick={() => addPort(selectedNodeId, 'in')}>
         + Додати вхід
       </button>
 
       {/* Output ports */}
       <div style={{ ...styles.portGroupLabel, color: '#90ee90', marginTop: 8 }}>Виходи (output)</div>
-      {outPorts.map((p) => (
-        <div key={p.id} style={styles.portRow}>
-          {editingPortId === p.id ? (
-            <input
-              autoFocus
-              style={{ ...styles.input, flex: 1, margin: 0 }}
-              value={portNameDraft}
-              onChange={(e) => setPortNameDraft(e.target.value)}
-              onBlur={() => commitPortName(p.id)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') commitPortName(p.id)
-                if (e.key === 'Escape') setEditingPortId(null)
-              }}
-            />
-          ) : (
-            <span
-              style={{ ...styles.portName, color: '#90ee90' }}
-              onDoubleClick={() => startEditPort(p.id, p.name)}
-              title="Подвійний клік для перейменування"
-            >
-              {p.name}
-            </span>
-          )}
-          <button
-            style={styles.iconBtn}
-            onClick={() => startEditPort(p.id, p.name)}
-            title="Перейменувати"
-          >
-            ✏️
-          </button>
-          <button
-            style={{ ...styles.iconBtn, color: '#f66' }}
-            onClick={() => deletePort(selectedNodeId, p.id)}
-            title="Видалити порт"
-          >
-            🗑
-          </button>
-        </div>
-      ))}
-      <button style={{ ...styles.addPortBtn, color: '#90ee90', borderColor: '#90ee90' }} onClick={() => addPort(selectedNodeId, 'out')}>
+      {outPorts.map((p) => renderPort(p.name, '#90ee90'))}
+      <button
+        style={{ ...styles.addPortBtn, color: '#90ee90', borderColor: '#90ee90' }}
+        onClick={() => addPort(selectedNodeId, 'out')}
+      >
         + Додати вихід
       </button>
 
@@ -212,6 +224,11 @@ const styles: Record<string, React.CSSProperties> = {
     width: '100%',
     boxSizing: 'border-box',
   },
+  fieldError: {
+    color: '#f66',
+    fontSize: 11,
+    marginTop: -2,
+  },
   portsTitle: {
     fontWeight: 700,
     fontSize: 12,
@@ -231,14 +248,19 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: 4,
     marginBottom: 2,
+    flexWrap: 'wrap',
   },
   portName: {
     flex: 1,
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
-    color: '#7ec8e3',
     cursor: 'pointer',
+  },
+  portError: {
+    color: '#f66',
+    fontSize: 10,
+    width: '100%',
   },
   iconBtn: {
     background: 'transparent',

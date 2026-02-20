@@ -1,25 +1,21 @@
-// ── Domain types (match backend Pydantic models) ──────────────────────────────
+// ── Domain types ──────────────────────────────────────────────────────────────
 
 export interface DeviceType {
-  id: number
-  name: string
-  label: string | null
-  color: string | null
-  icon: string | null
+  name: string    // unique technical key (used as identifier in JSON)
+  label: string   // display label shown in UI
+  color: string
+  icon: string    // emoji
 }
 
 export interface PortData {
-  id: number           // negative = new (not yet in DB)
   direction: 'in' | 'out'
-  name: string
+  name: string        // unique within device, used as identifier
   port_order: number
 }
 
 export interface DeviceData {
-  id: number           // negative = new (not yet in DB)
-  type_id: number | null
-  type: string | null  // device_types.name, e.g. 'zasuvka'
-  name: string
+  name: string        // unique identifier (replaces numeric id)
+  type: string | null // DeviceType.name
   description: string | null
   pos_x: number
   pos_y: number
@@ -27,12 +23,14 @@ export interface DeviceData {
 }
 
 export interface ConnectionData {
-  id: number
-  source_port: number
-  target_port: number
+  source_device: string  // device name
+  source_port: string    // port name
+  target_device: string
+  target_port: string
 }
 
 export interface GraphPayload {
+  deviceTypes: DeviceType[]
   devices: DeviceData[]
   connections: ConnectionData[]
 }

@@ -11,52 +11,39 @@ import {
   type OnConnect,
   type Connection,
 } from '@xyflow/react'
-import type { DeviceNodeData, DeviceType, PortData, GraphPayload, ConnectionData } from '../types/graph'
+import type { DeviceNodeData, DeviceType, PortData, GraphPayload } from '../types/graph'
 
-const LS_KEY = 'graph_autosave'
-let _nextTmpId = -1
-const tmpId = () => _nextTmpId--
+const LS_KEY = 'graph_v2'
 
 const EDGE_DEFAULTS = {
   style: { stroke: '#64b5f6', strokeWidth: 2 },
   markerEnd: { type: MarkerType.ArrowClosed, color: '#64b5f6' },
 }
 
-const DEVICE_TYPES: DeviceType[] = [
-  { id: 1, name: 'zasuvka',     label: 'Засувка',      color: '#4A90D9', icon: 'zasuvka' },
-  { id: 2, name: 'noria',       label: 'Норія',        color: '#E67E22', icon: 'noria' },
-  { id: 3, name: 'transporter', label: 'Транспортер',  color: '#27AE60', icon: 'transporter' },
-  { id: 4, name: 'redler',      label: 'Редлер',       color: '#8E44AD', icon: 'redler' },
-  { id: 5, name: 'bunker',      label: 'Бункер',       color: '#C0392B', icon: 'bunker' },
-  { id: 6, name: 'sylos',       label: 'Силос',        color: '#16A085', icon: 'sylos' },
-]
+// ── Edge ID helper ────────────────────────────────────────────────────────────
 
-// Convert GraphPayload ↔ React Flow nodes/edges ─────────────────────────────
+function makeEdgeId(src: string, srcPort: string, tgt: string, tgtPort: string) {
+  return `${src}::${srcPort}-->${tgt}::${tgtPort}`
+}
+
+// ── Payload ↔ React Flow conversion ──────────────────────────────────────────
 
 function payloadToFlow(payload: GraphPayload) {
   const nodes: Node<DeviceNodeData>[] = payload.devices.map((d) => ({
-    id: String(d.id),
+    id: d.name,
     type: 'device',
     position: { x: d.pos_x, y: d.pos_y },
-    data: { ...d, deviceTypes: DEVICE_TYPES },
+    data: { ...d, deviceTypes: payload.deviceTypes },
   }))
 
-  const edges: Edge[] = payload.connections.map((c) => {
-    const srcDevice = payload.devices.find((d) =>
-      d.ports.some((p) => p.id === c.source_port),
-    )
-    const tgtDevice = payload.devices.find((d) =>
-      d.ports.some((p) => p.id === c.target_port),
-    )
-    return {
-      id: String(c.id),
-      source: String(srcDevice?.id ?? ''),
-      sourceHandle: `port-${c.source_port}`,
-      target: String(tgtDevice?.id ?? ''),
-      targetHandle: `port-${c.target_port}`,
-      ...EDGE_DEFAULTS,
-    }
-  })
+  const edges: Edge[] = payload.connections.map((c) => ({
+    id: makeEdgeId(c.source_device, c.source_port, c.target_device, c.target_port),
+    source: c.source_device,
+    sourceHandle: `port-${c.source_port}`,
+    target: c.target_device,
+    targetHandle: `port-${c.target_port}`,
+    ...EDGE_DEFAULTS,
+  }))
 
   return { nodes, edges }
 }
@@ -64,32 +51,28 @@ function payloadToFlow(payload: GraphPayload) {
 function flowToPayload(
   nodes: Node<DeviceNodeData>[],
   edges: Edge[],
+  deviceTypes: DeviceType[],
 ): GraphPayload {
   const devices = nodes.map((n) => ({
-    id: Number(n.id),
-    type_id: n.data.type_id,
+    name: n.id,
     type: n.data.type,
-    name: n.data.name,
     description: n.data.description,
-    pos_x: n.position.x,
-    pos_y: n.position.y,
+    pos_x: Math.round(n.position.x),
+    pos_y: Math.round(n.position.y),
     ports: n.data.ports,
   }))
 
-  const connections: ConnectionData[] = edges.map((e) => {
-    const srcPortId = e.sourceHandle ? Number(e.sourceHandle.replace('port-', '')) : 0
-    const tgtPortId = e.targetHandle ? Number(e.targetHandle.replace('port-', '')) : 0
-    return {
-      id: Number(e.id),
-      source_port: srcPortId,
-      target_port: tgtPortId,
-    }
-  })
+  const connections = edges.map((e) => ({
+    source_device: e.source,
+    source_port: (e.sourceHandle ?? '').replace('port-', ''),
+    target_device: e.target,
+    target_port: (e.targetHandle ?? '').replace('port-', ''),
+  }))
 
-  return { devices, connections }
+  return { deviceTypes, devices, connections }
 }
 
-// ── Store ────────────────────────────────────────────────────────────────────
+// ── Store interface ───────────────────────────────────────────────────────────
 
 interface GraphState {
   nodes: Node<DeviceNodeData>[]
@@ -98,37 +81,50 @@ interface GraphState {
   selectedNodeId: string | null
   status: string
 
-  // React Flow callbacks
   onNodesChange: OnNodesChange<Node<DeviceNodeData>>
   onEdgesChange: OnEdgesChange
   onConnect: OnConnect
 
-  // Actions
+  // File operations
+  newProject: () => void
   saveToFile: () => void
   loadFromFile: (file: File) => void
-  addDevice: (typeId: number) => void
-  updateNodeData: (nodeId: string, data: Partial<DeviceNodeData>) => void
-  deleteNode: (nodeId: string) => void
-  addPort: (nodeId: string, direction: 'in' | 'out') => void
-  updatePort: (nodeId: string, portId: number, name: string) => void
-  deletePort: (nodeId: string, portId: number) => void
-  selectNode: (nodeId: string | null) => void
   autoSave: () => void
   loadFromLocalStorage: () => void
+
+  // Device type management
+  addDeviceType: (type: DeviceType) => string | null   // returns error or null
+  updateDeviceType: (name: string, updates: { label?: string; color?: string; icon?: string }) => void
+  deleteDeviceType: (name: string) => void
+
+  // Device management
+  addDevice: (typeName: string) => void
+  renameDevice: (oldName: string, newName: string) => string | null  // returns error or null
+  updateNodeData: (nodeId: string, data: Partial<Omit<DeviceNodeData, 'name'>>) => void
+  deleteNode: (nodeId: string) => void
+
+  // Port management
+  addPort: (nodeId: string, direction: 'in' | 'out') => void
+  renamePort: (nodeId: string, oldPortName: string, newPortName: string) => string | null
+  deletePort: (nodeId: string, portName: string) => void
+
+  selectNode: (nodeId: string | null) => void
 }
+
+// ── Store ─────────────────────────────────────────────────────────────────────
 
 export const useGraphStore = create<GraphState>((set, get) => ({
   nodes: [],
   edges: [],
-  deviceTypes: DEVICE_TYPES,
+  deviceTypes: [],
   selectedNodeId: null,
   status: '',
 
   // ── React Flow event handlers ──────────────────────────────────────────────
 
   onNodesChange: (changes) => {
+    // No autoSave here — fires 60x/sec during drag and blocks the main thread
     set((s) => ({ nodes: applyNodeChanges(changes, s.nodes) as Node<DeviceNodeData>[] }))
-    get().autoSave()
   },
 
   onEdgesChange: (changes) => {
@@ -137,18 +133,26 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   },
 
   onConnect: (connection: Connection) => {
+    // Debug: показати що onConnect викликався
+    set({ status: `onConnect: ${connection.source} → ${connection.target} | src=${connection.sourceHandle} tgt=${connection.targetHandle}` })
+
+    if (!connection.source || !connection.target) return
     if (connection.source === connection.target) return
 
     const { edges } = get()
     const duplicate = edges.some(
       (e) =>
+        e.source === connection.source &&
         e.sourceHandle === connection.sourceHandle &&
+        e.target === connection.target &&
         e.targetHandle === connection.targetHandle,
     )
     if (duplicate) return
 
+    const srcPort = (connection.sourceHandle ?? '').replace('port-', '')
+    const tgtPort = (connection.targetHandle ?? '').replace('port-', '')
     const newEdge: Edge = {
-      id: String(tmpId()),
+      id: makeEdgeId(connection.source, srcPort, connection.target, tgtPort),
       source: connection.source,
       sourceHandle: connection.sourceHandle ?? null,
       target: connection.target,
@@ -161,9 +165,14 @@ export const useGraphStore = create<GraphState>((set, get) => ({
 
   // ── File operations ────────────────────────────────────────────────────────
 
+  newProject: () => {
+    set({ nodes: [], edges: [], deviceTypes: [], selectedNodeId: null, status: 'Новий проект' })
+    try { localStorage.removeItem(LS_KEY) } catch { /* ignore */ }
+  },
+
   saveToFile: () => {
-    const { nodes, edges } = get()
-    const payload = flowToPayload(nodes, edges)
+    const { nodes, edges, deviceTypes } = get()
+    const payload = flowToPayload(nodes, edges, deviceTypes)
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -180,7 +189,12 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       try {
         const payload = JSON.parse(e.target?.result as string) as GraphPayload
         const { nodes, edges } = payloadToFlow(payload)
-        set({ nodes, edges, status: `Завантажено: ${file.name}` })
+        set({
+          nodes,
+          edges,
+          deviceTypes: payload.deviceTypes ?? [],
+          status: `Завантажено: ${file.name}`,
+        })
         get().autoSave()
       } catch {
         set({ status: 'Помилка читання файлу' })
@@ -189,30 +203,142 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     reader.readAsText(file)
   },
 
-  // ── Node / port mutations ──────────────────────────────────────────────────
+  autoSave: () => {
+    const { nodes, edges, deviceTypes } = get()
+    try {
+      const payload = flowToPayload(nodes, edges, deviceTypes)
+      localStorage.setItem(LS_KEY, JSON.stringify(payload))
+    } catch {
+      // ignore quota errors
+    }
+  },
 
-  addDevice: (typeId: number) => {
-    const { nodes } = get()
-    const dt = DEVICE_TYPES.find((t) => t.id === typeId)
-    const id = String(tmpId())
+  loadFromLocalStorage: () => {
+    try {
+      const raw = localStorage.getItem(LS_KEY)
+      if (!raw) return
+      const payload = JSON.parse(raw) as GraphPayload
+      const { nodes, edges } = payloadToFlow(payload)
+      set({
+        nodes,
+        edges,
+        deviceTypes: payload.deviceTypes ?? [],
+        status: 'Відновлено з локального сховища',
+      })
+    } catch {
+      // ignore parse errors
+    }
+  },
+
+  // ── Device type management ─────────────────────────────────────────────────
+
+  addDeviceType: (type: DeviceType) => {
+    const { deviceTypes } = get()
+    const name = type.name.trim()
+    if (!name) return 'Системна назва не може бути порожньою'
+    if (deviceTypes.some((t) => t.name === name)) {
+      return `Категорія "${name}" вже існує`
+    }
+    const newType = { ...type, name }
+    set((s) => {
+      const newTypes = [...s.deviceTypes, newType]
+      return {
+        deviceTypes: newTypes,
+        nodes: s.nodes.map((n) => ({ ...n, data: { ...n.data, deviceTypes: newTypes } })),
+      }
+    })
+    get().autoSave()
+    return null
+  },
+
+  updateDeviceType: (name, updates) => {
+    set((s) => {
+      const newTypes = s.deviceTypes.map((t) => (t.name === name ? { ...t, ...updates } : t))
+      return {
+        deviceTypes: newTypes,
+        nodes: s.nodes.map((n) => ({ ...n, data: { ...n.data, deviceTypes: newTypes } })),
+      }
+    })
+    get().autoSave()
+  },
+
+  deleteDeviceType: (name) => {
+    set((s) => {
+      const newTypes = s.deviceTypes.filter((t) => t.name !== name)
+      return {
+        deviceTypes: newTypes,
+        nodes: s.nodes.map((n) => ({
+          ...n,
+          data: {
+            ...n.data,
+            type: n.data.type === name ? null : n.data.type,
+            deviceTypes: newTypes,
+          },
+        })),
+      }
+    })
+    get().autoSave()
+  },
+
+  // ── Device management ──────────────────────────────────────────────────────
+
+  addDevice: (typeName: string) => {
+    const { nodes, deviceTypes } = get()
+    const dt = deviceTypes.find((t) => t.name === typeName)
+    const baseName = dt?.label ?? typeName ?? 'Пристрій'
+
+    // Generate unique device name
+    let name = baseName
+    let counter = 1
+    while (nodes.some((n) => n.id === name)) {
+      name = `${baseName} ${++counter}`
+    }
+
     const newNode: Node<DeviceNodeData> = {
-      id,
+      id: name,
       type: 'device',
-      position: { x: 100 + nodes.length * 20, y: 100 + nodes.length * 20 },
+      position: { x: 120 + nodes.length * 30, y: 120 + nodes.length * 30 },
       data: {
-        id: Number(id),
-        type_id: typeId,
-        type: dt?.name ?? null,
-        name: dt?.label ?? dt?.name ?? 'Новий пристрій',
+        name,
+        type: typeName,
         description: null,
-        pos_x: 100,
-        pos_y: 100,
+        pos_x: 120,
+        pos_y: 120,
         ports: [],
-        deviceTypes: DEVICE_TYPES,
+        deviceTypes,
       },
     }
     set((s) => ({ nodes: [...s.nodes, newNode] }))
     get().autoSave()
+  },
+
+  renameDevice: (oldName: string, newName: string) => {
+    const trimmed = newName.trim()
+    if (!trimmed) return 'Назва не може бути порожньою'
+    if (trimmed === oldName) return null
+
+    const { nodes } = get()
+    if (nodes.some((n) => n.id === trimmed)) {
+      return `Пристрій з назвою "${trimmed}" вже існує`
+    }
+
+    set((s) => ({
+      nodes: s.nodes.map((n) =>
+        n.id === oldName
+          ? { ...n, id: trimmed, data: { ...n.data, name: trimmed } }
+          : n,
+      ),
+      edges: s.edges.map((e) => {
+        const src = e.source === oldName ? trimmed : e.source
+        const tgt = e.target === oldName ? trimmed : e.target
+        const srcPort = (e.sourceHandle ?? '').replace('port-', '')
+        const tgtPort = (e.targetHandle ?? '').replace('port-', '')
+        return { ...e, source: src, target: tgt, id: makeEdgeId(src, srcPort, tgt, tgtPort) }
+      }),
+      selectedNodeId: s.selectedNodeId === oldName ? trimmed : s.selectedNodeId,
+    }))
+    get().autoSave()
+    return null
   },
 
   updateNodeData: (nodeId, data) => {
@@ -233,94 +359,89 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     get().autoSave()
   },
 
-  addPort: (nodeId, direction) => {
-    const portId = tmpId()
-    const port: PortData = {
-      id: portId,
-      direction,
-      name: direction === 'in' ? 'Новий вхід' : 'Новий вихід',
-      port_order: 0,
-    }
+  // ── Port management ────────────────────────────────────────────────────────
+
+  addPort: (nodeId: string, direction: 'in' | 'out') => {
     set((s) => ({
-      nodes: s.nodes.map((n) =>
-        n.id === nodeId
-          ? { ...n, data: { ...n.data, ports: [...n.data.ports, port] } }
-          : n,
-      ),
+      nodes: s.nodes.map((n) => {
+        if (n.id !== nodeId) return n
+        const baseName = direction === 'in' ? 'Вхід' : 'Вихід'
+        let portName = baseName
+        let counter = 1
+        while (n.data.ports.some((p) => p.name === portName)) {
+          portName = `${baseName} ${++counter}`
+        }
+        const port: PortData = { direction, name: portName, port_order: n.data.ports.length }
+        return { ...n, data: { ...n.data, ports: [...n.data.ports, port] } }
+      }),
     }))
     get().autoSave()
   },
 
-  updatePort: (nodeId, portId, name) => {
+  renamePort: (nodeId: string, oldPortName: string, newPortName: string) => {
+    const trimmed = newPortName.trim()
+    if (!trimmed) return 'Назва не може бути порожньою'
+    if (trimmed === oldPortName) return null
+
+    const { nodes } = get()
+    const node = nodes.find((n) => n.id === nodeId)
+    if (!node) return null
+    if (node.data.ports.some((p) => p.name === trimmed)) {
+      return `Порт з назвою "${trimmed}" вже існує`
+    }
+
+    const oldHandle = `port-${oldPortName}`
+    const newHandle = `port-${trimmed}`
+
     set((s) => ({
       nodes: s.nodes.map((n) =>
-        n.id === nodeId
-          ? {
+        n.id !== nodeId
+          ? n
+          : {
               ...n,
               data: {
                 ...n.data,
                 ports: n.data.ports.map((p) =>
-                  p.id === portId ? { ...p, name } : p,
+                  p.name === oldPortName ? { ...p, name: trimmed } : p,
                 ),
               },
-            }
-          : n,
+            },
       ),
+      edges: s.edges.map((e) => {
+        let updated = { ...e }
+        if (e.source === nodeId && e.sourceHandle === oldHandle) {
+          updated = { ...updated, sourceHandle: newHandle }
+        }
+        if (e.target === nodeId && e.targetHandle === oldHandle) {
+          updated = { ...updated, targetHandle: newHandle }
+        }
+        const src = updated.source
+        const tgt = updated.target
+        const srcPort = (updated.sourceHandle ?? '').replace('port-', '')
+        const tgtPort = (updated.targetHandle ?? '').replace('port-', '')
+        return { ...updated, id: makeEdgeId(src, srcPort, tgt, tgtPort) }
+      }),
     }))
     get().autoSave()
+    return null
   },
 
-  deletePort: (nodeId, portId) => {
+  deletePort: (nodeId: string, portName: string) => {
+    const handle = `port-${portName}`
     set((s) => ({
       nodes: s.nodes.map((n) =>
-        n.id === nodeId
-          ? {
-              ...n,
-              data: {
-                ...n.data,
-                ports: n.data.ports.filter((p) => p.id !== portId),
-              },
-            }
-          : n,
+        n.id !== nodeId
+          ? n
+          : { ...n, data: { ...n.data, ports: n.data.ports.filter((p) => p.name !== portName) } },
       ),
       edges: s.edges.filter(
         (e) =>
-          e.sourceHandle !== `port-${portId}` &&
-          e.targetHandle !== `port-${portId}`,
+          !(e.source === nodeId && e.sourceHandle === handle) &&
+          !(e.target === nodeId && e.targetHandle === handle),
       ),
     }))
     get().autoSave()
   },
 
   selectNode: (nodeId) => set({ selectedNodeId: nodeId }),
-
-  // ── LocalStorage ───────────────────────────────────────────────────────────
-
-  autoSave: () => {
-    const { nodes, edges } = get()
-    try {
-      localStorage.setItem(LS_KEY, JSON.stringify({ nodes, edges }))
-    } catch {
-      // ignore quota errors
-    }
-  },
-
-  loadFromLocalStorage: () => {
-    try {
-      const raw = localStorage.getItem(LS_KEY)
-      if (!raw) return
-      const parsed = JSON.parse(raw) as {
-        nodes: Node<DeviceNodeData>[]
-        edges: Edge[]
-      }
-      const nodes = parsed.nodes.map((n) => ({
-        ...n,
-        data: { ...n.data, deviceTypes: DEVICE_TYPES },
-      }))
-      const edges = parsed.edges.map((e) => ({ ...e, ...EDGE_DEFAULTS }))
-      set({ nodes, edges, status: 'Відновлено з локального сховища' })
-    } catch {
-      // ignore parse errors
-    }
-  },
 }))

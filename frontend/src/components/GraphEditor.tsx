@@ -24,6 +24,7 @@ export default function GraphEditor() {
   const onEdgesChange = useGraphStore((s) => s.onEdgesChange)
   const onConnect = useGraphStore((s) => s.onConnect)
   const loadFromLocalStorage = useGraphStore((s) => s.loadFromLocalStorage)
+  const autoSave = useGraphStore((s) => s.autoSave)
   const selectNode = useGraphStore((s) => s.selectNode)
   const deleteNode = useGraphStore((s) => s.deleteNode)
 
@@ -40,6 +41,8 @@ export default function GraphEditor() {
   // Delete selected node or selected edges with Delete key
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      const tag = (e.target as HTMLElement).tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return
       if (e.key === 'Delete' || e.key === 'Backspace') {
         const state = useGraphStore.getState()
         if (state.selectedNodeId) {
@@ -65,11 +68,13 @@ export default function GraphEditor() {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        onNodeDragStop={autoSave}
         onPaneClick={onPaneClick}
         nodeTypes={nodeTypes}
         snapToGrid
         snapGrid={[16, 16]}
         fitView
+        connectionRadius={60}
         deleteKeyCode={null}    // we handle delete manually
         defaultEdgeOptions={{
           style: { stroke: '#64b5f6', strokeWidth: 2 },
@@ -90,7 +95,7 @@ export default function GraphEditor() {
           style={{ background: '#16213e', border: '1px solid #333' }}
           nodeColor={(n) => {
             const data = n.data as DeviceNodeData
-            const dt = data?.deviceTypes?.find((t) => t.id === data?.type_id)
+            const dt = data?.deviceTypes?.find((t) => t.name === data?.type)
             return dt?.color ?? '#4A90D9'
           }}
           maskColor="#0f0f1a99"

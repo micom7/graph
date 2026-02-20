@@ -1,11 +1,22 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import { useGraphStore } from '../../store/graphStore'
 
 export default function SavePanel() {
+  const newProject = useGraphStore((s) => s.newProject)
   const saveToFile = useGraphStore((s) => s.saveToFile)
   const loadFromFile = useGraphStore((s) => s.loadFromFile)
   const status = useGraphStore((s) => s.status)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [confirming, setConfirming] = useState(false)
+
+  const handleNew = () => {
+    if (confirming) {
+      newProject()
+      setConfirming(false)
+    } else {
+      setConfirming(true)
+    }
+  }
 
   return (
     <div style={styles.panel}>
@@ -18,17 +29,37 @@ export default function SavePanel() {
           const file = e.target.files?.[0]
           if (file) loadFromFile(file)
           e.target.value = ''
+          setConfirming(false)
         }}
       />
-      <button
-        style={{ ...styles.btn, background: '#0f3460' }}
-        onClick={() => fileInputRef.current?.click()}
-      >
-        📂 Відкрити файл
-      </button>
-      <button style={{ ...styles.btn, background: '#0a6640' }} onClick={saveToFile}>
-        💾 Зберегти файл
-      </button>
+
+      {confirming ? (
+        <>
+          <span style={styles.confirm}>Очистити проект?</span>
+          <button style={{ ...styles.btn, background: '#8B0000' }} onClick={handleNew}>
+            Так
+          </button>
+          <button style={{ ...styles.btn, background: '#444' }} onClick={() => setConfirming(false)}>
+            Ні
+          </button>
+        </>
+      ) : (
+        <>
+          <button style={{ ...styles.btn, background: '#2c2c2c' }} onClick={handleNew}>
+            🆕 Новий проект
+          </button>
+          <button
+            style={{ ...styles.btn, background: '#0f3460' }}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            📂 Відкрити файл
+          </button>
+          <button style={{ ...styles.btn, background: '#0a6640' }} onClick={saveToFile}>
+            💾 Зберегти файл
+          </button>
+        </>
+      )}
+
       {status && <div style={styles.status}>{status}</div>}
     </div>
   )
@@ -56,6 +87,12 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 6,
     padding: '7px 14px',
     cursor: 'pointer',
+    fontSize: 13,
+    fontWeight: 600,
+    whiteSpace: 'nowrap',
+  },
+  confirm: {
+    color: '#f99',
     fontSize: 13,
     fontWeight: 600,
     whiteSpace: 'nowrap',

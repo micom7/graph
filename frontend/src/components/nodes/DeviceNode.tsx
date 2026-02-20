@@ -3,16 +3,6 @@ import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
 import type { DeviceNodeData } from '../../types/graph'
 import { useGraphStore } from '../../store/graphStore'
 
-// Icon map by device type name
-const ICONS: Record<string, string> = {
-  zasuvka: '🔀',
-  noria: '⬆️',
-  transporter: '➡️',
-  redler: '↔️',
-  bunker: '📦',
-  sylos: '🏛️',
-}
-
 function DeviceNode({ id, data, selected }: NodeProps<Node<DeviceNodeData>>) {
   const selectNode = useGraphStore((s) => s.selectNode)
 
@@ -20,10 +10,10 @@ function DeviceNode({ id, data, selected }: NodeProps<Node<DeviceNodeData>>) {
     selectNode(id)
   }, [id, selectNode])
 
-  const dt = data.deviceTypes?.find((t) => t.id === data.type_id)
+  const dt = data.deviceTypes?.find((t) => t.name === data.type)
   const color = dt?.color ?? '#4A90D9'
-  const icon = dt?.name ? (ICONS[dt.name] ?? '⚙️') : '⚙️'
-  const label = dt?.label ?? dt?.name ?? 'Пристрій'
+  const icon = dt?.icon ?? '⚙️'
+  const label = dt?.label ?? data.type ?? 'Пристрій'
 
   const inPorts = data.ports.filter((p) => p.direction === 'in')
   const outPorts = data.ports.filter((p) => p.direction === 'out')
@@ -79,14 +69,13 @@ function DeviceNode({ id, data, selected }: NodeProps<Node<DeviceNodeData>>) {
         <div style={{ flex: 1 }}>
           {inPorts.map((port) => (
             <div
-              key={port.id}
+              key={port.name}
               style={{
                 position: 'relative',
                 padding: '5px 10px 5px 16px',
                 color: '#7ec8e3',
                 fontSize: 11,
                 whiteSpace: 'nowrap',
-                overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 maxWidth: 120,
               }}
@@ -95,12 +84,12 @@ function DeviceNode({ id, data, selected }: NodeProps<Node<DeviceNodeData>>) {
               <Handle
                 type="target"
                 position={Position.Left}
-                id={`port-${port.id}`}
+                id={`port-${port.name}`}
                 style={{
                   background: '#7ec8e3',
-                  width: 10,
-                  height: 10,
-                  left: 0,
+                  width: 14,
+                  height: 14,
+                  left: -2,
                   top: '50%',
                   transform: 'translateY(-50%)',
                 }}
@@ -114,7 +103,7 @@ function DeviceNode({ id, data, selected }: NodeProps<Node<DeviceNodeData>>) {
         <div style={{ flex: 1, textAlign: 'right' }}>
           {outPorts.map((port) => (
             <div
-              key={port.id}
+              key={port.name}
               style={{
                 position: 'relative',
                 padding: '5px 16px 5px 10px',
@@ -131,12 +120,12 @@ function DeviceNode({ id, data, selected }: NodeProps<Node<DeviceNodeData>>) {
               <Handle
                 type="source"
                 position={Position.Right}
-                id={`port-${port.id}`}
+                id={`port-${port.name}`}
                 style={{
                   background: '#90ee90',
-                  width: 10,
-                  height: 10,
-                  right: 0,
+                  width: 14,
+                  height: 14,
+                  right: -2,
                   top: '50%',
                   transform: 'translateY(-50%)',
                 }}
